@@ -2,30 +2,56 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sign Up</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join FashionHub</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; display: flex; justify-content: center; padding-top: 100px; }
-        .card { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 320px; text-align: center; }
-        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        .btn { width: 100%; padding: 12px; background-color: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px;}
-        .error { color: #ef4444; font-size: 14px; margin-bottom: 10px; }
+        :root {
+            --primary: #1a1a1a;
+            --accent: #c5a059;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 50px; border-radius: 0; box-shadow: 0 30px 60px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        .logo { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 800; text-align: center; margin-bottom: 40px; letter-spacing: 4px; text-transform: uppercase; color: var(--primary); }
+        .form-group { margin-bottom: 25px; }
+        label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #999; margin-bottom: 10px; font-weight: 700; }
+        input { width: 100%; padding: 15px; border: 1px solid #eee; border-radius: 0; box-sizing: border-box; font-size: 14px; background: #fafafa; transition: 0.3s; }
+        input:focus { outline: none; border-color: var(--accent); background: white; }
+        .btn-signup { width: 100%; padding: 18px; background: var(--primary); color: white; border: none; border-radius: 0; cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: 3px; font-weight: 700; margin-top: 15px; transition: 0.3s; }
+        .btn-signup:hover { background: var(--accent); }
+        .footer-text { text-align: center; margin-top: 30px; font-size: 13px; color: #777; }
+        .footer-text a { color: var(--primary); text-decoration: none; font-weight: 600; border-bottom: 1px solid transparent; transition: 0.3s; }
+        .footer-text a:hover { border-color: var(--primary); }
+        .error { background: #fee2e2; color: #dc2626; padding: 15px; font-size: 13px; text-align: center; margin-bottom: 25px; }
     </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="card">
-        <h2>Create an Account</h2>
+        <div class="logo">FashionHub</div>
+        
         {% if error %}
-            <div class="error">{{ error }}</div>
+        <div class="error">{{ error }}</div>
         {% endif %}
+
         <form action="/signup" method="post">
-            <input type="text" name="name" placeholder="Full Name" required>
-            <input type="email" name="email" placeholder="Email Address" required>
-            <input type="password" name="password" placeholder="Create Password" required>
-            <button type="submit" class="btn">Sign Up</button>
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" name="name" placeholder="John Doe" required>
+            </div>
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" name="email" placeholder="email@example.com" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn-signup">Create Account</button>
         </form>
-        <p style="font-size: 14px; color: #666; margin-top: 20px;">
-            Already have an account? <a href="/login" style="color: #3b82f6; text-decoration: none;">Log in</a>
-        </p>
+        
+        <div class="footer-text">
+            Already have an account? <a href="/login">Sign in</a>
+        </div>
     </div>
 </body>
 </html>

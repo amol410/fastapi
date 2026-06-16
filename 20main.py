@@ -1,11 +1,15 @@
-from fastapi import FastAPI, Request, Form, Depends, Response
+from fastapi import FastAPI, Request, Form, Depends, Response, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, String, select
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import create_engine, String, select, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 import jwt
 import bcrypt
 from datetime import datetime, timedelta, timezone
+import os
+import shutil
+from typing import Optional
 
 # ==========================================
 # 1. SECURITY & JWT CONFIGURATION
@@ -13,6 +17,10 @@ from datetime import datetime, timedelta, timezone
 SECRET_KEY = "my_super_secret_key_for_development" # In production, keep this safe!
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+# Directory for uploaded images
+UPLOAD_DIR = "static/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # We use bcrypt directly to avoid compatibility issues with passlib on newer Python versions
 def verify_password(plain_password, hashed_password):
@@ -43,8 +51,15 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(30))
     email: Mapped[str] = mapped_column(String(50), unique=True)
-    # NEW COLUMN: We store the hashed password, never the real one
     hashed_password: Mapped[str] = mapped_column(String(100))
+
+class Product(Base):
+    __tablename__ = "products"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(String(200))
+    price: Mapped[str] = mapped_column(String(20)) # Using string for flexibility (e.g. "$19.99")
+    image_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 Base.metadata.create_all(bind=engine)
 
@@ -52,7 +67,7 @@ Base.metadata.create_all(bind=engine)
 # 3. FASTAPI SETUP & DEPENDENCIES
 # ==========================================
 app = FastAPI()
-# NOTE: Matching the capital 'F' from your screenshot
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="Frontend") 
 
 def get_db():
@@ -89,17 +104,14 @@ def signup_page(request: Request):
 
 @app.post("/signup")
 def signup_post(request: Request, name: str = Form(...), email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    # Check if user already exists
     existing_user = db.scalars(select(User).where(User.email == email)).first()
     if existing_user:
         return templates.TemplateResponse(request=request, name="signup.html", context={"error": "Email already registered."})
     
-    # Create new user with HASHED password
     new_user = User(name=name, email=email, hashed_password=get_password_hash(password))
     db.add(new_user)
     db.commit()
     
-    # Generate JWT and create cookie
     access_token = create_access_token(data={"sub": new_user.email})
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie(key="access_token", value=access_token, httponly=True)
@@ -111,12 +123,10 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login_post(request: Request, email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    # Verify user exists and password is correct
     user = db.scalars(select(User).where(User.email == email)).first()
     if not user or not verify_password(password, user.hashed_password):
         return templates.TemplateResponse(request=request, name="login.html", context={"error": "Invalid email or password."})
     
-    # Generate JWT and create cookie
     access_token = create_access_token(data={"sub": user.email})
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie(key="access_token", value=access_token, httponly=True)
@@ -129,20 +139,19 @@ def logout():
     return response
 
 # ==========================================
-# 5. PROTECTED ROUTES (CRUD)
+# 5. PROTECTED ROUTES (CRUD for Products)
 # ==========================================
 
 @app.get("/", response_class=HTMLResponse)
 def home_page(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # If there is no current user (invalid or missing JWT), kick them to the login page
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
         
-    users = db.scalars(select(User)).all()
+    products = db.scalars(select(Product)).all()
     return templates.TemplateResponse(
         request=request, 
         name="index.html", 
-        context={"users": users, "current_user": current_user}
+        context={"products": products, "current_user": current_user}
     )
 
 @app.get("/create", response_class=HTMLResponse)
@@ -151,36 +160,78 @@ def create_page(request: Request, current_user: User = Depends(get_current_user)
     return templates.TemplateResponse(request=request, name="create.html")
 
 @app.post("/create")
-def create_user(name: str = Form(...), email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    # We now require a password when creating users from the dashboard too
-    new_user = User(name=name, email=email, hashed_password=get_password_hash(password))
-    db.add(new_user)
+async def create_product(
+    name: str = Form(...), 
+    description: str = Form(...), 
+    price: str = Form(...), 
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user: return RedirectResponse(url="/login", status_code=303)
+    
+    image_path = None
+    if image and image.filename:
+        file_extension = os.path.splitext(image.filename)[1]
+        unique_filename = f"{datetime.now().timestamp()}{file_extension}"
+        image_path = f"uploads/{unique_filename}"
+        with open(os.path.join(UPLOAD_DIR, unique_filename), "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+
+    new_product = Product(name=name, description=description, price=price, image_path=image_path)
+    db.add(new_product)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
 
-@app.get("/update/{user_id}", response_class=HTMLResponse)
-def update_page(request: Request, user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.get("/update/{product_id}", response_class=HTMLResponse)
+def update_page(request: Request, product_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user: return RedirectResponse(url="/login", status_code=303)
-    user = db.get(User, user_id)
-    return templates.TemplateResponse(request=request, name="update.html", context={"user": user})
+    product = db.get(Product, product_id)
+    return templates.TemplateResponse(request=request, name="update.html", context={"product": product})
 
-@app.post("/update/{user_id}")
-def update_user(user_id: int, name: str = Form(...), email: str = Form(...), db: Session = Depends(get_db)):
-    user = db.get(User, user_id)
-    if user:
-        user.name = name
-        user.email = email
+@app.post("/update/{product_id}")
+async def update_product(
+    product_id: int, 
+    name: str = Form(...), 
+    description: str = Form(...), 
+    price: str = Form(...), 
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user: return RedirectResponse(url="/login", status_code=303)
+    
+    product = db.get(Product, product_id)
+    if product:
+        product.name = name
+        product.description = description
+        product.price = price
+        
+        if image and image.filename:
+            # Delete old image if it exists
+            if product.image_path:
+                old_path = os.path.join("static", product.image_path)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+            
+            file_extension = os.path.splitext(image.filename)[1]
+            unique_filename = f"{datetime.now().timestamp()}{file_extension}"
+            product.image_path = f"uploads/{unique_filename}"
+            with open(os.path.join(UPLOAD_DIR, unique_filename), "wb") as buffer:
+                shutil.copyfileobj(image.file, buffer)
+                
         db.commit()
     return RedirectResponse(url="/", status_code=303)
 
-@app.get("/delete/{user_id}")
-def delete_user(user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.get("/delete/{product_id}")
+def delete_product(product_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user: return RedirectResponse(url="/login", status_code=303)
-    user = db.get(User, user_id)
-    if user:
-        db.delete(user)
+    product = db.get(Product, product_id)
+    if product:
+        if product.image_path:
+            old_path = os.path.join("static", product.image_path)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+        db.delete(product)
         db.commit()
-    # Log out the user if they delete themselves
-    if current_user.id == user_id:
-        return RedirectResponse(url="/logout", status_code=303)
     return RedirectResponse(url="/", status_code=303)
