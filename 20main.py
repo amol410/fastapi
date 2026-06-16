@@ -38,7 +38,7 @@ def get_db():
 # 3. ROUTES (Returning HTML Pages)
 # ==========================================
 
-# --- READ (Homepage) ---
+# --- READ (Homepage) --- http://127.0.0.1:8000/
 @app.get("/", response_class=HTMLResponse)
 def home_page(request: Request, db: Session = Depends(get_db)):
     users = db.scalars(select(User)).all()
@@ -48,7 +48,7 @@ def home_page(request: Request, db: Session = Depends(get_db)):
         context={"users": users}
     )
 
-# --- CREATE ---
+# --- CREATE --- http://127.0.0.1:8000/create
 @app.get("/create", response_class=HTMLResponse)
 def create_page(request: Request):
     return templates.TemplateResponse(request=request, name="create.html")
@@ -88,3 +88,11 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
         db.delete(user)
         db.commit()
     return RedirectResponse(url="/", status_code=303)
+
+
+# pip install python-multipart
+"""extracts the file and form fields 
+so your code can actually use them."""
+
+# pip install jinja2
+"""Jinja2 is a templating engine for Python"""
